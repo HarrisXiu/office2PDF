@@ -7,8 +7,10 @@
 **事務作業の「面倒」をまとめて自動化する、実務特化型のOffice一括PDF変換・加工ツールです。**  
 Officeファイルや画像をPDF化するだけでなく、透かし・ページ番号・分割/結合・命名ルールまで数クリックでまとめて処理できます。
 
-> **完全オフライン変換**：Microsoft Office（COM）を利用して変換します。  
-> そのため **Officeがインストール済みのWindows環境**が前提です。
+> **完全オフライン変換**：Microsoft Office または WPS Office（COM）を利用します。
+> Office文書には対応するCOMコンポーネントが必要です。PDF・画像の処理にはOffice/WPSは不要です。
+
+変換・キャンセルボタンと進捗は下部に固定され、設定はスクロール、ログは折りたたみ可能です。エンジンは「自動（Office優先）」「Microsoft Office」「WPS Office」から選択でき、設定・プリセットに保存されます。自動モードはOfficeコンポーネントの起動失敗時のみWPSを試します。WPSの対応はインストール済みCOM機能に依存し、`.wps/.et/.dps`形式は追加していません。
 
 ---
 
@@ -95,7 +97,7 @@ Officeファイルや画像をPDF化するだけでなく、透かし・ペー�
 
 ### 動作環境
 - Windows 10 / 11（64bit）
-- **Microsoft Office（Excel/Word/PowerPoint）がインストールされていること**
+- **Microsoft Office または COM 対応の WPS Office の必要なコンポーネントがインストールされていること**
 
 ### 基本手順
 1. アプリを起動
@@ -119,7 +121,7 @@ Officeファイルや画像をPDF化するだけでなく、透かし・ペー�
 
 ### 1) 実行環境
 - Python **3.9以上**（Windows）
-- Microsoft Office インストール済み
+- Microsoft Office または COM 対応 WPS Office インストール済み
 
 ### 2) 依存ライブラリのインストール
 ```bash

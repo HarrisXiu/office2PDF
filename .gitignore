@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+build/
+.workbuddy/
+pdf_pro_config_v4.json
+naming_templates.txt
+watermark_templates.txt
+test_artifacts/exe_smoke/
+dist/*
+!dist/Office2PDF.exe

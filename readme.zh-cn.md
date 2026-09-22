@@ -7,8 +7,18 @@
 **一款面向办公场景的批量 PDF 转换与处理工具。**
 批量将 Office 文件和图片转换为 PDF，并可添加水印、页码、拆分/合并，以及灵活的命名规则，几步点击即可完成。
 
-> **离线转换：** 本应用通过 COM 自动化调用 Microsoft Office。
-> 需要已安装 Microsoft Office，所有转换均在本地（离线）完成。
+> **离线转换：** 本应用通过 COM 自动化调用 Microsoft Office 或 WPS Office。
+> Office 文档转换需要安装对应办公组件并可通过 COM 调用；PDF、图片处理无需 Office/WPS。所有转换均在本地完成。
+
+### 窗口缩放与转换引擎
+
+- 开始转换、取消和进度条固定在底部；设置区支持滚动，日志可折叠，文件列表与设置区之间可拖动调节高度。
+- 窄窗口下设置分组上下排列；较宽的设置行可用底部横向滚动条查看。
+- 转换引擎可选择「自动（优先 Office）」「Microsoft Office」「WPS Office」，随配置及预设保存。
+- 自动模式仅在对应 Office 组件无法创建时尝试 WPS；文件打开或导出失败会记录错误，不会静默更换引擎。
+- 引擎同时用于 Word/Excel/PPT 转换、水印预览与工作表读取。当前支持原有 Office 文件格式，不新增 `.wps/.et/.dps` 原生格式。
+- WPS 的支持范围取决于所安装版本的 COM 能力；安装了 WPS 但未注册可用自动化组件时，日志会列出失败的组件名称。
+- 新版可执行文件：`dist/Office2PDF.exe`。
 
 ---
 
@@ -90,7 +100,7 @@
 
 ### 系统要求
 - Windows 10 / 11（64 位）
-- **已安装 Microsoft Office**（Excel / Word / PowerPoint）
+- **已安装 Microsoft Office 或支持 COM 的 WPS Office**（所需的文字 / 表格 / 演示组件）
 
 ### 基本步骤
 1. 启动应用。
@@ -116,7 +126,7 @@
 
 ### 1) 环境
 - Python **3.9+**（Windows）
-- 已安装 Microsoft Office
+- 已安装 Microsoft Office 或支持 COM 的 WPS Office
 
 ### 2) 安装依赖
 ```bash

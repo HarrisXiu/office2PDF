@@ -7,8 +7,10 @@
 **一款面向辦公場景的批次 PDF 轉換與處理工具。**
 批次將 Office 檔案和圖片轉換為 PDF，並可加入浮水印、頁碼、分割/合併，以及靈活的命名規則，幾步點擊即可完成。
 
-> **離線轉換：** 本應用透過 COM 自動化呼叫 Microsoft Office。
-> 需要已安裝 Microsoft Office，所有轉換均在本地（離線）完成。
+> **離線轉換：** 本應用透過 COM 自動化呼叫 Microsoft Office 或 WPS Office。
+> Office 文件需安裝可供 COM 呼叫的對應元件；PDF、圖片處理不需要 Office/WPS。
+
+執行按鈕及進度固定在底部，設定區可捲動，日誌可收合。可選「自動（優先 Office）」「Microsoft Office」「WPS Office」，並隨設定及預設儲存。自動模式僅於 Office 元件無法建立時嘗試 WPS；開啟或匯出失敗會記錄錯誤。WPS 支援取決於安裝版本的 COM 能力，目前不新增 `.wps/.et/.dps` 格式。
 
 ---
 
@@ -90,7 +92,7 @@
 
 ### 系統需求
 - Windows 10 / 11（64 位元）
-- **已安裝 Microsoft Office**（Excel / Word / PowerPoint）
+- **已安裝 Microsoft Office 或支援 COM 的 WPS Office**（所需的文字 / 表格 / 簡報元件）
 
 ### 基本步驟
 1. 啟動應用程式。
@@ -116,7 +118,7 @@
 
 ### 1) 環境
 - Python **3.9+**（Windows）
-- 已安裝 Microsoft Office
+- 已安裝 Microsoft Office 或支援 COM 的 WPS Office
 
 ### 2) 安裝相依性
 ```bash

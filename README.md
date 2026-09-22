@@ -14,8 +14,14 @@
 **A practical, office-focused batch PDF conversion & processing tool.**  
 Convert Office files and images to PDF in bulk, then apply watermarks, page numbers, splitting/merging, and flexible naming rules with just a few clicks.
 
-> **Offline conversion:** This app uses Microsoft Office via COM automation.  
-> Microsoft Office must be installed, and conversions are performed locally (offline).
+> **Offline conversion:** This app uses Microsoft Office or WPS Office via COM automation.
+> Office documents require a working COM-enabled installation of the corresponding components. PDF and image processing do not require either suite.
+
+### Resizable layout and engine selection
+
+Conversion/cancel buttons and progress stay in a fixed footer. Settings scroll, logs collapse, and the file/settings divider can be dragged. Narrow windows stack settings groups; wide rows remain accessible through horizontal scrolling.
+
+Choose Auto (Office first), Microsoft Office, or WPS Office. Auto falls back only when an Office component cannot be created; document/export failures are reported without changing engines. The choice is saved in settings/presets and applies to conversion, previews, and Excel sheet discovery. WPS compatibility depends on the installed COM components; native `.wps/.et/.dps` formats are not added. The executable is `dist/Office2PDF.exe`.
 
 ---
 
@@ -104,7 +110,7 @@ Supported placeholders:
 
 ### Requirements
 - Windows 10 / 11 (64-bit)
-- **Microsoft Office installed** (Excel / Word / PowerPoint)
+- **Microsoft Office or COM-enabled WPS Office installed** (the components needed for your documents)
 
 ### Basic Steps
 1. Launch the app.
@@ -133,7 +139,7 @@ Supported placeholders:
 
 ### 1) Environment
 - Python **3.9+** (Windows)
-- Microsoft Office installed
+- Microsoft Office or COM-enabled WPS Office installed
 
 ### 2) Install dependencies
 ```bash

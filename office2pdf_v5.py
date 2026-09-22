@@ -15,6 +15,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 import pythoncom
 import win32com.client
+from office_backend import application, close_document
 from pypdf import PdfWriter, PdfReader
 from PIL import Image
 
@@ -513,6 +514,7 @@ POS_MAP = [
 
 @dataclass
 class AppConfig:
+    engine: str = "auto"
     lang: str = ""  # 手动选择的语言（空 = 自动检测）
     output_dir: str = ""
     out_mode: str = "original"
@@ -572,7 +574,14 @@ class PDFUltimateApp:
 
         # 以下、UI構築でこの関数を使う
         self.root.title(self._("win_title"))
-        self.root.geometry("900x920")
+        import ctypes
+        from ctypes import wintypes
+        work_area = wintypes.RECT(0, 0, self.root.winfo_screenwidth(), self.root.winfo_screenheight())
+        ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
+        width = min(1000, work_area.right - work_area.left - 80)
+        height = min(860, work_area.bottom - work_area.top - 80)
+        self.root.geometry(f"{width}x{height}+{work_area.left + 30}+{work_area.top + 30}")
+        self.root.minsize(min(560, width), min(420, height))
 
         self.files: List[Dict[str, Any]] = []
         self.presets: Dict[str, Any] = {}
@@ -635,6 +644,7 @@ class PDFUltimateApp:
             self.nm_templates = [l.strip() for l in f if l.strip()]
 
     def update_config_from_ui(self):
+        self.config.engine = ("auto", "office", "wps")[max(0, self.engine_combo.current())]
         self.config.wm1_text = self.wm1_val.get()
         self.config.wm1_pos = self.wm1_pos_var.get()
         self.config.wm2_text = self.wm2_val.get()
@@ -673,6 +683,8 @@ class PDFUltimateApp:
         self.config.compress_pdf = self.compress_var.get()
 
     def apply_config_to_ui(self):
+        self.engine_combo.current(("auto", "office", "wps").index(
+            self.config.engine if self.config.engine in ("auto", "office", "wps") else "auto"))
         # 任意：UI変数に内部IDが入っていたら補正
         if self.pg_pos_var.get() in ("bc", "br"):
             self.pg_pos_var.set(self.pg_id_to_display.get(self.pg_pos_var.get(), self._("pg_pos_bc")))
@@ -733,13 +745,72 @@ class PDFUltimateApp:
         menubar.add_cascade(label="Language", menu=lang_menu)
         self.root.config(menu=menubar)
 
-        main_container = tk.Frame(self.root, padx=10, pady=5)
-        main_container.pack(fill=tk.BOTH, expand=True)
+        self.root.rowconfigure(0, weight=1)
+        self.root.columnconfigure(0, weight=1)
+        shell = tk.Frame(self.root, padx=10, pady=5)
+        shell.grid(row=0, column=0, sticky="nsew")
+        shell.rowconfigure(0, weight=1)
+        shell.columnconfigure(0, weight=1)
+        panes = ttk.Panedwindow(shell, orient=tk.VERTICAL)
+        panes.grid(row=0, column=0, sticky="nsew")
+        files_host = tk.Frame(panes)
+        panes.add(files_host, weight=1)
+        settings_host = tk.Frame(panes)
+        panes.add(settings_host, weight=3)
+        settings_host.rowconfigure(0, weight=1)
+        settings_host.columnconfigure(0, weight=1)
+        self.settings_canvas = tk.Canvas(settings_host, highlightthickness=0)
+        self.settings_canvas.grid(row=0, column=0, sticky="nsew")
+        vbar = ttk.Scrollbar(settings_host, orient=tk.VERTICAL, command=self.settings_canvas.yview)
+        vbar.grid(row=0, column=1, sticky="ns")
+        self.settings_canvas.configure(yscrollcommand=vbar.set)
+        hbar = ttk.Scrollbar(settings_host, orient=tk.HORIZONTAL, command=self.settings_canvas.xview)
+        hbar.grid(row=1, column=0, sticky="ew")
+        self.settings_canvas.configure(xscrollcommand=hbar.set)
+        main_container = tk.Frame(self.settings_canvas, padx=2, pady=2)
+        settings_window = self.settings_canvas.create_window(0, 0, anchor="nw", window=main_container)
+        main_container.bind("<Configure>", lambda e: self.settings_canvas.configure(
+            scrollregion=self.settings_canvas.bbox("all")))
+        self.settings_canvas.bind("<Configure>", lambda e: self.settings_canvas.itemconfigure(
+            settings_window, width=max(e.width, main_container.winfo_reqwidth())))
+        def scroll_settings(event):
+            widget = event.widget
+            while widget is not None:
+                if widget == main_container or widget == self.settings_canvas:
+                    self.settings_canvas.yview_scroll(-int(event.delta / 120), "units")
+                    return "break"
+                widget = getattr(widget, "master", None)
+        self.root.bind("<MouseWheel>", scroll_settings, add="+")
+        def reveal_focus(event):
+            widget = event.widget
+            parent = widget
+            while parent is not None and parent != main_container:
+                parent = getattr(parent, "master", None)
+            if parent is None:
+                return
+            for axis in ("x", "y"):
+                position = (widget.winfo_rootx() - main_container.winfo_rootx() if axis == "x"
+                            else widget.winfo_rooty() - main_container.winfo_rooty())
+                extent = main_container.winfo_width() if axis == "x" else main_container.winfo_height()
+                size = widget.winfo_width() if axis == "x" else widget.winfo_height()
+                view = self.settings_canvas.xview() if axis == "x" else self.settings_canvas.yview()
+                start, end = view[0] * extent, view[1] * extent
+                target = position if position < start else position + size - (end - start)
+                if position < start or position + size > end:
+                    move = self.settings_canvas.xview_moveto if axis == "x" else self.settings_canvas.yview_moveto
+                    move(max(0, target) / max(1, extent))
+        self.root.bind("<FocusIn>", reveal_focus, add="+")
+        footer = tk.Frame(shell)
+        footer.grid(row=1, column=0, sticky="ew")
 
         # File List
-        file_frame = tk.LabelFrame(main_container, text=self._("file_list"), padx=5, pady=5)
+        file_frame = tk.LabelFrame(files_host, text=self._("file_list"), padx=5, pady=5)
         file_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        self.tree = ttk.Treeview(file_frame, columns=("Type", "Name", "Range", "Out"), show="headings", height=8)
+        tree_host = tk.Frame(file_frame)
+        tree_host.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        tree_host.rowconfigure(0, weight=1)
+        tree_host.columnconfigure(0, weight=1)
+        self.tree = ttk.Treeview(tree_host, columns=("Type", "Name", "Range", "Out"), show="headings", height=5)
         for col, head, w in [
             ("Type", self._("col_type"), 70),
             ("Name", self._("col_name"), 300),
@@ -748,7 +819,12 @@ class PDFUltimateApp:
         ]:
             self.tree.heading(col, text=head)
             self.tree.column(col, width=w)
-        self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        tree_y = ttk.Scrollbar(tree_host, orient=tk.VERTICAL, command=self.tree.yview)
+        tree_y.grid(row=0, column=1, sticky="ns")
+        tree_x = ttk.Scrollbar(tree_host, orient=tk.HORIZONTAL, command=self.tree.xview)
+        tree_x.grid(row=1, column=0, sticky="ew")
+        self.tree.configure(yscrollcommand=tree_y.set, xscrollcommand=tree_x.set)
         self.tree.drop_target_register(DND_FILES)
         self.tree.dnd_bind("<<Drop>>", self.handle_drop)
         self.tree.bind("<Double-1>", self.on_list_double_click)
@@ -943,7 +1019,25 @@ class PDFUltimateApp:
         tk.Checkbutton(s_row, text=self._("chk_open_done"), variable=self.open_var).pack(side=tk.LEFT, padx=5)
         tk.Checkbutton(s_row, text=self._("chk_open_folder"), variable=self.folder_var).pack(side=tk.LEFT, padx=5)
         tk.Checkbutton(s_row, text=self._("chk_clear_after"), variable=self.clear_after_var).pack(side=tk.LEFT, padx=5)
-        exec_f = tk.Frame(bottom_frame)
+        engine_row = tk.Frame(main_container)
+        engine_row.pack(fill=tk.X, pady=5, before=pre_f)
+        labels = {"zh_cn": ("转换引擎：", "自动（优先 Office）", "显示日志"),
+                  "zh_tw": ("轉換引擎：", "自動（優先 Office）", "顯示日誌"),
+                  "ja": ("変換エンジン:", "自動（Office 優先）", "ログ表示"),
+                  "en": ("Engine:", "Auto (Office first)", "Show log")}
+        engine_label, auto_label, log_label = labels[self.lang]
+        tk.Label(engine_row, text=engine_label).pack(side=tk.LEFT)
+        self.engine_combo = ttk.Combobox(engine_row, state="readonly", width=25,
+                                         values=(auto_label, "Microsoft Office", "WPS Office"))
+        self.engine_combo.current(0)
+        self.engine_combo.pack(side=tk.LEFT)
+        self.engine_combo.bind("<<ComboboxSelected>>", lambda e: self.update_config_from_ui())
+        def reflow(event):
+            stacked = event.width < 880
+            wm_frame.pack_configure(side=tk.TOP if stacked else tk.LEFT, fill=tk.X if stacked else tk.BOTH)
+            split_frame.pack_configure(side=tk.TOP if stacked else tk.LEFT, fill=tk.X if stacked else tk.BOTH)
+        shell.bind("<Configure>", reflow)
+        exec_f = tk.Frame(footer)
         exec_f.pack(fill=tk.X, pady=10)
         self.btn_convert = tk.Button(
             exec_f,
@@ -967,13 +1061,17 @@ class PDFUltimateApp:
         )
         self.btn_cancel.pack(side=tk.LEFT, padx=2)
 
-        self.progress_label = tk.Label(main_container, text=self._("st_ready"), anchor="w")
+        self.progress_label = tk.Label(footer, text=self._("st_ready"), anchor="w")
         self.progress_label.pack(fill=tk.X)
-        self.progress = ttk.Progressbar(main_container, orient=tk.HORIZONTAL, mode="determinate")
+        self.progress = ttk.Progressbar(footer, orient=tk.HORIZONTAL, mode="determinate")
         self.progress.pack(fill=tk.X)
 
-        log_f = tk.Frame(main_container)
-        log_f.pack(fill=tk.BOTH, expand=False, pady=5)
+        log_f = tk.Frame(footer)
+        self.show_log_var = tk.BooleanVar(value=False)
+        self.log_toggle = ttk.Checkbutton(footer, text=log_label, variable=self.show_log_var,
+                        command=lambda: log_f.pack(fill=tk.X, pady=5) if self.show_log_var.get()
+                        else log_f.pack_forget())
+        self.log_toggle.pack(anchor="w")
         self.log_text = tk.Text(log_f, height=3, bg="#1e1e1e", fg="#00ff00", font=("Consolas", 9))
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sb = tk.Scrollbar(log_f, command=self.log_text.yview)
@@ -1160,9 +1258,9 @@ class PDFUltimateApp:
                         ok = False
 
                         if f["type"] == "Word":
-                            ok = self.cv_word(f, tmp_p)
+                            ok = self.cv_word(f, tmp_p, cfg)
                         elif f["type"] == "PowerPoint":
-                            ok = self.cv_ppt(f, tmp_p)
+                            ok = self.cv_ppt(f, tmp_p, cfg)
                         elif f["type"] == "Image":
                             ok = self.cv_img(f, tmp_p)
                         elif f["type"] == "PDF":
@@ -1254,95 +1352,78 @@ class PDFUltimateApp:
                 pythoncom.CoUninitialize()
 
     # --- Office Converters (with COM cleanup & Excel Print Area) ---
+    def validate_export(self, path):
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            raise RuntimeError(f"PDF export missing: {path}")
+        if not PdfReader(path).pages:
+            raise RuntimeError(f"PDF export has no pages: {path}")
+
     def cv_excel_units(self, f: dict, tmp_dir: str, cfg: AppConfig) -> List[Tuple[str, str]]:
         units = []
-        excel = None
-        wb = None
         try:
-            excel = win32com.client.DispatchEx("Excel.Application")
-            excel.Visible = False
-            excel.DisplayAlerts = False
-            wb = excel.Workbooks.Open(os.path.abspath(f["path"]), ReadOnly=True)
-
-            target_sheets = [s.strip() for s in f.get("range", "").split(",") if s.strip()]
-            if not target_sheets or self._is_all_range(f.get("range", "")):
-                target_sheets = [s.Name for s in wb.Sheets]
-
-            for name in target_sheets:
+            with application("Excel", cfg.engine, self.queue_log) as session:
+                excel = session.app
+                wb = None
                 try:
-                    ws = wb.Worksheets(name)
-                    if ws.Visible != -1:
-                        continue
+                    excel.DisplayAlerts = False
+                    wb = excel.Workbooks.Open(os.path.abspath(f["path"]), ReadOnly=True)
+                    session.observe_document(wb)
+                    names = [s.strip() for s in f.get("range", "").split(",") if s.strip()]
+                    if not names or self._is_all_range(f.get("range", "")):
+                        names = [s.Name for s in wb.Worksheets]
+                    for name in names:
+                        if self.cancel_flag.is_set():
+                            break
+                        try:
+                            ws = wb.Worksheets(name)
+                            if ws.Visible != -1:
+                                continue
+                            if cfg.excel_fit or cfg.excel_fit_tall:
+                                ws.PageSetup.Zoom = False
+                                if cfg.excel_fit:
+                                    ws.PageSetup.FitToPagesWide = 1
+                                if cfg.excel_fit_tall:
+                                    ws.PageSetup.FitToPagesTall = 1
+                            fd, target = tempfile.mkstemp(prefix="sheet_", suffix=".pdf", dir=tmp_dir)
+                            os.close(fd)
+                            ws.ExportAsFixedFormat(0, os.path.abspath(target))
+                            self.validate_export(target)
+                            units.append((target, name))
+                        except Exception as exc:
+                            self.queue_log(f"{self._('log_conv_fail')} {f['path']} [{name}]: {exc}")
+                finally:
+                    close_document(wb, self.queue_log)
+        except Exception as exc:
+            self.queue_log(f"{self._('log_conv_fail')} {f['path']}: {exc}")
+        return units
 
-                    ps = ws.PageSetup
-                    if cfg.excel_fit or cfg.excel_fit_tall:
-                        ps.Zoom = False
-                        if cfg.excel_fit:
-                            ps.FitToPagesWide = 1
-                        if cfg.excel_fit_tall:
-                            ps.FitToPagesTall = 1
-
-                    tmp_p = os.path.join(tmp_dir, f"ex_{len(units)}.pdf")
-                    ws.ExportAsFixedFormat(0, tmp_p)
-                    units.append((tmp_p, name))
-                except:
-                    continue
-            return units
-        finally:
-            if wb:
-                wb.Close(False)
-            if excel:
-                excel.Quit()
-
-    def cv_word(self, f, out):
-        word = None
-        doc = None
+    def cv_document(self, kind, f, out, cfg):
         try:
-            word = win32com.client.DispatchEx("Word.Application")
-            doc = word.Documents.Open(os.path.abspath(f["path"]), ReadOnly=True)
-            doc.ExportAsFixedFormat(os.path.abspath(out), 17)
-            return True
-        except:
-            return False
-        finally:
-            if doc:
-                doc.Close(False)
+            with application(kind, cfg.engine, self.queue_log) as session:
+                app = session.app
                 doc = None
-            if word:
-                word.Quit()
-                word = None
-
-    def cv_ppt(self, f, out):
-        ppt = None
-        pres = None
-        try:
-            ppt = win32com.client.DispatchEx("PowerPoint.Application")
-
-            # ★PowerPointは「非表示(Visible=False)」が禁止の環境があるので触らないのが安全
-            # ppt.Visible = 1  # ←必要なら True のみ（Falseは不可）
-
-            abs_path = os.path.abspath(f["path"])
-            abs_out = os.path.abspath(out)
-
-            # Open(FileName, ReadOnly, Untitled, WithWindow)
-            pres = ppt.Presentations.Open(abs_path, True, False, False)
-
-            # ★ExportAsFixedFormat の既知回避（PrintRange=None）
-            pres.ExportAsFixedFormat(abs_out, 2, PrintRange=None)
-
-            return True
-
-        except Exception as e:
-            self.queue_log(f"{self._('log_ppt_err')} ({os.path.basename(f['path'])}): {e}")
+                try:
+                    if kind == "Word":
+                        doc = app.Documents.Open(os.path.abspath(f["path"]), ReadOnly=True)
+                        session.observe_document(doc)
+                        doc.ExportAsFixedFormat(os.path.abspath(out), 17)
+                    else:
+                        doc = app.Presentations.Open(os.path.abspath(f["path"]), True, False, False)
+                        session.observe_document(doc)
+                        doc.ExportAsFixedFormat(os.path.abspath(out), 2, PrintRange=None)
+                    self.validate_export(out)
+                    return True
+                finally:
+                    close_document(doc, self.queue_log, presentation=kind == "PowerPoint")
+        except Exception as exc:
+            self.queue_log(f"{self._('log_conv_fail')} {f['path']}: {exc}")
             return False
 
-        finally:
-            try:
-                if pres:
-                    pres.Close()
-            finally:
-                if ppt:
-                    ppt.Quit()
+    def cv_word(self, f, out, cfg):
+        return self.cv_document("Word", f, out, cfg)
+
+    def cv_ppt(self, f, out, cfg):
+        return self.cv_document("PowerPoint", f, out, cfg)
 
     def cv_img(self, f, out):
         try:
@@ -1514,9 +1595,9 @@ class PDFUltimateApp:
                         ok = True
                     else:
                         if f_info["type"] == "Word":
-                            ok = self.cv_word(f_info, tmp_pdf)
+                            ok = self.cv_word(f_info, tmp_pdf, cfg_snapshot)
                         elif f_info["type"] == "PowerPoint":
-                            ok = self.cv_ppt(f_info, tmp_pdf)
+                            ok = self.cv_ppt(f_info, tmp_pdf, cfg_snapshot)
                         elif f_info["type"] == "Image":
                             ok = self.cv_img(f_info, tmp_pdf)
                         elif f_info["type"] == "PDF":
@@ -1758,14 +1839,17 @@ class PDFUltimateApp:
 
     def get_excel_sheets(self, p):
         try:
-            pythoncom.CoInitialize()
-            ex = win32com.client.DispatchEx("Excel.Application")
-            wb = ex.Workbooks.Open(os.path.abspath(p), ReadOnly=True)
-            names = [s.Name for s in wb.Sheets]
-            wb.Close(False)
-            ex.Quit()
-            return names
-        except:
+            with application("Excel", self.config.engine, self.queue_log) as session:
+                ex = session.app
+                wb = None
+                try:
+                    wb = ex.Workbooks.Open(os.path.abspath(p), ReadOnly=True)
+                    session.observe_document(wb)
+                    return [s.Name for s in wb.Worksheets]
+                finally:
+                    close_document(wb, self.queue_log)
+        except Exception as exc:
+            self.queue_log(f"{self._('log_conv_fail')} {p}: {exc}")
             return []
 
     def update_tree(self):
@@ -1855,6 +1939,8 @@ class PDFUltimateApp:
         win.title(self._("title_range"))
         win.geometry("300x400")
         if f["type"] == "Excel":
+            if not f["sheets"]:
+                f["sheets"] = self.get_excel_sheets(f["path"])
             lb = tk.Listbox(win, selectmode=tk.MULTIPLE)
             lb.pack(fill=tk.BOTH, expand=True)
             for s in f["sheets"]:
